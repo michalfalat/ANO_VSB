@@ -8,9 +8,9 @@
 #define M_PI 3.14159265358979323846
 using namespace std;
 
-double ComputePerimeterForObject(FeatureList &obj, cv::Mat indexedImage, cv::Mat coloredImage, int p, int q)
+double ComputeAreaForObject(FeatureList &obj, cv::Mat indexedImage, cv::Mat coloredImage)
 {
-	double perimeter = 0.0;
+	double area = 0.0;
 	int index = obj.Index;
 	cv::Point center = obj.Center;
 	for (int y = 0; y < indexedImage.rows; y++) {
@@ -18,8 +18,33 @@ double ComputePerimeterForObject(FeatureList &obj, cv::Mat indexedImage, cv::Mat
 
 
 			if (indexedImage.at<float>(y, x) == index) {
-				perimeter += pow((x - center.x), p) * pow((y - center.y), q) * index;
+				area += pow(x, 0) * pow(y, 0);
 			}
+		}
+	}
+	return area;
+}
+
+double ComputePerimeterForObject(FeatureList &obj, cv::Mat indexedImage, cv::Mat coloredImage, int p, int q)
+{
+	double perimeter = 0.0;
+	int index = obj.Index;
+	cv::Point center = obj.Center;
+	for (int y = 1; y < indexedImage.rows - 1; y++) {
+		for (int x = 1; x < indexedImage.cols - 1; x++) {
+
+
+			if (indexedImage.at<float>(y, x) == index) {
+				if(indexedImage.at<float>(y, x + 1) == index &&
+					indexedImage.at<float>(y, x - 1) == index &&
+					indexedImage.at<float>(y + 1, x) == index &&
+					indexedImage.at<float>(y - 1, x) == index) {
+				}
+				else {
+					perimeter += 1;
+				}
+			}
+				
 		}
 	}
 	return perimeter;
@@ -32,13 +57,19 @@ void ComputePerimeter(ObjectData &feature)
 	std::list<FeatureList>::iterator obj = feature.Objects.begin();
 	while (obj != feature.Objects.end())
 	{
-		(*obj).Perimeter = ComputePerimeterForObject((*obj), feature.IndexedImage, feature.ColoredImage, 0, 0);
+		double per = ComputePerimeterForObject((*obj), feature.IndexedImage, feature.ColoredImage, 0, 0);
+		double area = ComputeAreaForObject((*obj), feature.IndexedImage, feature.ColoredImage);
+		(*obj).Perimeter = per;
+		(*obj).Area = area;
+		std::cout << "Object " << (*obj).Index  << " perimeter: " << per  << " area: " << area << std::endl;
 		obj++;
 	}
 
 	std::cout << "Done ..." << std::endl;
 
 }
+
+
 
 void ComputeFeatureOne(ObjectData &feature)
 {
@@ -53,6 +84,8 @@ void ComputeFeatureOne(ObjectData &feature)
 	std::cout << "Done ..." << std::endl;
 
 }
+
+
 
 void ComputeFeatureTwo(ObjectData &feature)
 {
