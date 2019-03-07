@@ -8,6 +8,24 @@
 #define M_PI 3.14159265358979323846
 using namespace std;
 
+
+double CalculateMoment(FeatureList &obj, cv::Mat indexedImage, cv::Mat coloredImage, int p, int q)
+{
+	double moment = 0.0;
+	int index = obj.Index;
+	cv::Point center = obj.Center;
+	for (int y = 0; y < indexedImage.rows; y++) {
+		for (int x = 0; x < indexedImage.cols; x++) {
+
+
+			if (indexedImage.at<float>(y, x) == index) {
+				moment += pow(x, p) * pow(y, q);
+			}
+		}
+	}
+	return moment;
+}
+
 double ComputeAreaForObject(FeatureList &obj, cv::Mat indexedImage, cv::Mat coloredImage)
 {
 	double area = 0.0;
@@ -50,7 +68,7 @@ double ComputePerimeterForObject(FeatureList &obj, cv::Mat indexedImage, cv::Mat
 	return perimeter;
 }
 
-void ComputePerimeter(ObjectData &feature)
+void ComputePerimeterAndArea(ObjectData &feature)
 {
 	std::cout << "Computing perimeters" << std::endl;
 
@@ -94,11 +112,11 @@ void ComputeFeatureTwo(ObjectData &feature)
 	std::list<FeatureList>::iterator obj = feature.Objects.begin();
 	while (obj != feature.Objects.end())
 	{
-		double micro20 = ComputePerimeterForObject((*obj), feature.IndexedImage, feature.ColoredImage, 2, 0);
-		double micro02 = ComputePerimeterForObject((*obj), feature.IndexedImage, feature.ColoredImage, 0, 2);
-		double micro11 = ComputePerimeterForObject((*obj), feature.IndexedImage, feature.ColoredImage, 1, 1);
-		double microMax = (1 / 2) * (micro20 + micro02) + (1 / 2) * sqrt((4 * pow(micro11, 2)) + pow(micro20 - micro02, 2));
-		double microMin = (1 / 2) * (micro20 + micro02) - (1 / 2) * sqrt((4 * pow(micro11, 2)) + pow(micro20 - micro02, 2));
+		double m20 = CalculateMoment((*obj), feature.IndexedImage, feature.ColoredImage, 2, 0);
+		double m02 = CalculateMoment((*obj), feature.IndexedImage, feature.ColoredImage, 0, 2);
+		double m11 = CalculateMoment((*obj), feature.IndexedImage, feature.ColoredImage, 1, 1);
+		double microMax = 0.5f * (m20 + m02) +  (0.5f * sqrt((4 * pow(m11, 2)) + pow(m20 - m02, 2)));
+		double microMin = 0.5f * (m20 + m02) -  (0.5f * sqrt((4 * pow(m11, 2)) + pow(m20 - m02, 2)));
 
 		(*obj).Feature2 = microMin / microMax;
 		obj++;
@@ -237,11 +255,9 @@ void ImageIndexing()
 	feature.Objects = objects;
 
 	ComputeCenterOfObjects(feature);
-	ComputePerimeter(feature);
+	ComputePerimeterAndArea(feature);
 	ComputeFeatureOne(feature);
 	ComputeFeatureTwo(feature);
-
-	//Calc_center(indexedImage, coloredImage, indexes);
 
 	cv::imshow("Original", imageGray);
 	cv::imshow("Threshold", feature.IndexedImage);
