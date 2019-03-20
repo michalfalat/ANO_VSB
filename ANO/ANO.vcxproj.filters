@@ -24,12 +24,21 @@
     <ClInclude Include="ObjectData.h">
       <Filter>Resource Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\..\Desktop\bpnn\bpnn\backprop.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\Desktop\bpnn\bpnn\backprop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\Desktop\bpnn\bpnn\ns_test.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

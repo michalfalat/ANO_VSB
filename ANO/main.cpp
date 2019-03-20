@@ -103,6 +103,200 @@ void ComputeFeatureOne(ObjectData &feature)
 
 }
 
+double ComputeEuclideanDistance(MyPoint a, Ethalon b)
+{
+	double distance = sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2));
+	return distance;
+}
+
+double ComputeEuclideanDistance(MyPoint a, MyPoint b)
+{
+	double distance = sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2));
+	return distance;
+}
+
+void ComputeEthalons(ObjectData &feature)
+{
+	std::cout << "Computing  ethalons" << std::endl;
+
+	double x = 0.0;
+	double y = 0.0;
+	std::list<Ethalon> ethalons;
+	Ethalon currentEthalon = Ethalon(0.0, 0.0);
+	std::list<FeatureList>::iterator obj = feature.Objects.begin();
+	while (obj != feature.Objects.end())
+	{
+		//feature1 => x
+		//feature2 => y
+
+		if (currentEthalon.x == 0.0)
+		{
+			currentEthalon = Ethalon((*obj).Feature1, (*obj).Feature2);
+			ethalons.push_back(currentEthalon);
+		}
+		else
+		{
+			MyPoint currentPoint = MyPoint((*obj).Feature1, (*obj).Feature2);
+			std::list<Ethalon>::iterator eth = ethalons.begin();
+			bool found = false;
+			while (eth != ethalons.end())
+			{
+				if (ComputeEuclideanDistance(currentPoint, (*eth)) < 0.2)
+				{
+					(*eth) = Ethalon((currentPoint.x + (*eth).x) / 2, (currentPoint.y + (*eth).y) / 2);
+					found = true;
+				}
+
+				eth++;
+			}
+			if (!found)
+			{
+				ethalons.push_back(Ethalon(currentPoint.x, currentPoint.y));
+			}
+		}
+		obj++;
+	}
+	std::list<Ethalon>::iterator eth = ethalons.begin();
+	while (eth != ethalons.end())
+	{
+		(*eth).AddClass();
+		eth++;
+	}
+
+	feature.Ethalons = ethalons;
+	std::cout << "Done ..." << std::endl;
+
+}
+
+void AssignClassToObject(ObjectData &feature)
+{
+	std::cout << "Getting class for objects" << std::endl;
+
+	std::list<FeatureList>::iterator obj = feature.Objects.begin();
+	while (obj != feature.Objects.end())
+	{
+		MyPoint objectPoint = MyPoint((*obj).Feature1, (*obj).Feature2);
+		double mindst = INFINITY;
+		Ethalon closestEthalon;
+		std::list<Ethalon>::iterator eth = feature.Ethalons.begin();
+		while (eth != feature.Ethalons.end())
+		{
+			double dst = ComputeEuclideanDistance(objectPoint, (*eth));
+			if (dst < mindst)
+			{
+				mindst = dst;
+				closestEthalon = (*eth);
+			}
+			eth++;
+		}
+		(*obj).ClassLabel = closestEthalon;
+		obj++;
+	}
+	std::cout << "Done ..." << std::endl;
+
+}
+
+
+
+void ComputeKMeans(ObjectData &feature)
+{
+	std::cout << "Computing k-means" << std::endl;
+
+	int numOfCentroids = feature.Ethalons.size();
+	srand(time(NULL));
+	std::list<CentroidObject> centroids;
+
+	for (int i = 0; i < numOfCentroids; i++)
+	{
+		int index = rand() % (feature.Objects.size() - 1) + 1;
+		std::list<FeatureList>::iterator it = feature.Objects.begin();
+		std::advance(it, index);
+		CentroidObject c;
+		c.Centroid = MyPoint((*it).Feature1, (*it).Feature2);
+		centroids.push_back(c);
+	}
+	double delta = 0.05;
+	bool iterate = true;
+
+	while (iterate)
+	{
+		//clear closestobject list from previous iteration
+		std::list<CentroidObject>::iterator cen = centroids.begin();
+		while (cen != centroids.end())
+		{
+			(*cen).ClosestObjects.clear();
+			cen++;
+		}
+
+		//asign objects to centroids
+		std::list<FeatureList>::iterator obj = feature.Objects.begin();
+		while (obj != feature.Objects.end())
+		{
+			double distance = INFINITY;
+			CentroidObject *closestCentroid = nullptr;
+			MyPoint objectPoint = MyPoint((*obj).Feature1, (*obj).Feature2);
+			std::list<CentroidObject>::iterator cen = centroids.begin();
+			while (cen != centroids.end())
+			{
+				double temp = ComputeEuclideanDistance((*cen).Centroid, objectPoint);
+				if (temp < distance)
+				{
+					distance = temp;
+					closestCentroid = &(*cen);
+				}
+
+				cen++;
+			}
+			closestCentroid->ClosestObjects.push_back((*obj));
+			obj++;
+		}
+
+		int tmp = 0;
+		//compute centroids
+		cen = centroids.begin();
+		while (cen != centroids.end())
+		{
+			if ((*cen).ClosestObjects.size() > 0)
+			{
+				MyPoint oldCentroid = (*cen).Centroid;
+				double sumX = 0.0;
+				double sumY = 0.0;
+				int count = 0;
+				std::list<FeatureList>::iterator obj = (*cen).ClosestObjects.begin();
+				while (obj != (*cen).ClosestObjects.end())
+				{
+					sumX += (*obj).Feature1;
+					sumY += (*obj).Feature2;
+					count++;
+					obj++;
+				}
+
+				MyPoint newCentroid = MyPoint(sumX / count, sumY / count);
+				double dist = ComputeEuclideanDistance(oldCentroid, newCentroid);
+				if (dist <= delta)
+				{
+					if (tmp == 0)
+						iterate = false;
+				}
+				else
+				{
+					iterate = true;
+				}
+
+				(*cen).Centroid = newCentroid;
+
+				tmp++;
+			}
+
+			cen++;
+		}
+	}
+
+	feature.Centroids = centroids;
+	std::cout << "Done ..." << std::endl;
+
+}	
+
 
 
 void ComputeFeatureTwo(ObjectData &feature)
@@ -124,6 +318,32 @@ void ComputeFeatureTwo(ObjectData &feature)
 	std::cout << "Done ..." << std::endl;
 
 }
+
+
+
+void ShowFeatures(ObjectData &feature)
+{
+	cv::Mat coloredImage = cv::Mat::zeros(cv::Size(600, 200), CV_8UC3);
+	std::list<FeatureList>::iterator obj = feature.Objects.begin();
+	while (obj != feature.Objects.end())
+	{
+		circle(coloredImage, cv::Point((*obj).Feature1 * 500, (*obj).Feature2 * 50), 3, cv::Scalar(0.0, 0.0, 255.0, 1.0), 1);
+		obj++;
+	}
+
+	std::list<CentroidObject>::iterator cen = feature.Centroids.begin();
+	while (cen != feature.Centroids.end())
+	{
+		circle(coloredImage, cv::Point((*cen).Centroid.x * 500, (*cen).Centroid.y * 50), 6, cv::Scalar(255.0, 0.0, 0.0, 1.0), 1);
+		cen++;
+	}
+
+	imshow("Features", coloredImage);
+
+
+}
+
+
 
 void Image_index(cv::Mat &image, cv::Mat &indexedImage, cv::Mat &coloredImage, int y, int x, int index, cv::Vec3b color) {
 	if (x > image.cols || x < 0)
@@ -259,9 +479,15 @@ void ImageIndexing()
 	ComputeFeatureOne(feature);
 	ComputeFeatureTwo(feature);
 
+	ComputeEthalons(feature);
+	AssignClassToObject(feature);
+	ComputeKMeans(feature);
+
 	cv::imshow("Original", imageGray);
 	cv::imshow("Threshold", feature.IndexedImage);
 	cv::imshow("Colored", feature.ColoredImage);
+
+	ShowFeatures(feature);
 
 
 	cv::waitKey(0);
