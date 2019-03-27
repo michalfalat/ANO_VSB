@@ -5,8 +5,222 @@
 #include "ObjectData.h"
 
 
+#define LAMBDA 1.0
+#define ETA 0.1
+
+#define SQR( x ) ( ( x ) * ( x ) )
 #define M_PI 3.14159265358979323846
 using namespace std;
+
+
+void randomize(double * p, int n)
+{
+	for (int i = 0; i < n; i++) {
+		p[i] = (double)rand() / (RAND_MAX);
+	}
+}
+
+NN * createNN(int n, int h, int o)
+{
+	srand(time(NULL));
+	NN * nn = new NN;
+
+	nn->n = new int[3];
+	nn->n[0] = n;
+	nn->n[1] = h;
+	nn->n[2] = o;
+	nn->l = 3;
+
+	nn->w = new double **[nn->l - 1];
+
+
+	for (int k = 0; k < nn->l - 1; k++)
+	{
+		nn->w[k] = new double *[nn->n[k + 1]];
+		for (int j = 0; j < nn->n[k + 1]; j++)
+		{
+			nn->w[k][j] = new double[nn->n[k]];
+			randomize(nn->w[k][j], nn->n[k]);
+			// BIAS
+			//nn->w[k][j] = new double[nn->n[k] + 1];			
+			//randomize( nn->w[k][j], nn->n[k] + 1 );
+		}
+	}
+
+	nn->y = new double *[nn->l];
+	for (int k = 0; k < nn->l; k++) {
+		nn->y[k] = new double[nn->n[k]];
+		memset(nn->y[k], 0, sizeof(double) * nn->n[k]);
+	}
+
+	nn->in = nn->y[0];
+	nn->out = nn->y[nn->l - 1];
+
+	nn->d = new double *[nn->l];
+	for (int k = 0; k < nn->l; k++) {
+		nn->d[k] = new double[nn->n[k]];
+		memset(nn->d[k], 0, sizeof(double) * nn->n[k]);
+	}
+
+	return nn;
+}
+
+void releaseNN(NN *& nn)
+{
+	for (int k = 0; k < nn->l - 1; k++) {
+		for (int j = 0; j < nn->n[k + 1]; j++) {
+			delete[] nn->w[k][j];
+		}
+		delete[] nn->w[k];
+	}
+	delete[] nn->w;
+
+	for (int k = 0; k < nn->l; k++) {
+		delete[] nn->y[k];
+	}
+	delete[] nn->y;
+
+	for (int k = 0; k < nn->l; k++) {
+		delete[] nn->d[k];
+
+	}
+	delete[] nn->d;
+
+	delete[] nn->n;
+
+	delete nn;
+	nn = NULL;
+}
+
+void feedforward(NN * nn)
+{
+	for (int k = 0; k < nn->l; k++)
+	{
+		int neuronsCount = nn->n[k];
+		if (k == 0)
+		{
+			for (int n = 0; n < neuronsCount; n++)
+			{
+				nn->y[k][n] = 1.0 / (1.0 + exp(-LAMBDA * nn->in[n]));
+			}
+		}
+		else
+		{
+			for (int n = 0; n < neuronsCount; n++)
+			{
+				double weight = 0.0;
+				for (int we = 0; we < nn->n[k - 1]; we++)
+				{
+					weight += nn->w[k - 1][n][we] * nn->y[k - 1][we];
+				}
+
+				weight = 1.0 / (1.0 + exp(-LAMBDA * weight));
+				nn->y[k][n] = weight;
+			}
+		}
+	}
+	for (int o = 0; o < nn->n[nn->l - 1]; o++)
+	{
+		nn->out[o] = nn->y[nn->l - 1][o];
+	}
+
+
+
+}
+
+double backpropagation(NN * nn, double * t)
+{
+
+	double error = 0.0;
+
+	for (int k = nn->l - 1; k >= 0; k--)
+	{
+		if (k == nn->l - 1)
+		{
+			for (int n = 0; n < nn->n[k]; n++)
+			{
+				double to = t[n];
+				double y = nn->y[k][n];
+				double res = (to - nn->y[k][n]) * LAMBDA *   nn->y[k][n] * (1 - nn->y[k][n]);
+				nn->d[k][n] -= res;
+			}
+		}
+		else
+		{
+			for (int n = 0; n < nn->n[k]; n++)
+			{
+				double errorResult = 0.0;
+				int indexOfUpperlayer = k + 1;
+				for (int j = 0; j < nn->n[indexOfUpperlayer]; j++)
+				{
+					errorResult += nn->d[indexOfUpperlayer][j] * nn->w[k][j][n];
+				}
+
+				errorResult = errorResult * LAMBDA *   nn->y[k][n] * (1 - nn->y[k][n]);
+				nn->d[k][n] -= errorResult;
+			}
+		}
+	}
+
+	for (int k = 0; k < nn->l - 1; k++)//layers
+	{
+		for (int i = 0; i < nn->n[k + 1]; i++)//upper layer
+		{
+			for (int j = 0; j < nn->n[k]; j++)//lower layer
+			{
+				double oldWeight = nn->w[k][i][j];
+				double d = nn->d[k + 1][i];
+				double y = nn->y[k][i];
+				double newWeight = ETA * d * y;
+				nn->w[k][i][j] += newWeight;
+			}
+		}
+	}
+
+
+	for (int n = 0; n < nn->n[nn->l - 1]; n++)
+	{
+		error += pow(t[n] - nn->y[nn->l - 1][n], 2);
+	}
+	error = error * (1.0 / 2.0);
+
+	return error;
+}
+
+void setInput(NN * nn, double * in, bool verbose)
+{
+	memcpy(nn->in, in, sizeof(double) * nn->n[0]);
+
+	if (verbose) {
+		printf("input=(");
+		for (int i = 0; i < nn->n[0]; i++) {
+			printf("%0.3f", nn->in[i]);
+			if (i < nn->n[0] - 1) {
+				printf(", ");
+			}
+		}
+		printf(")\n");
+	}
+}
+
+int getOutput(NN * nn, bool verbose)
+{
+	double max = 0.0;
+	int max_i = 0;
+	if (verbose) printf(" output=");
+	for (int i = 0; i < nn->n[nn->l - 1]; i++)
+	{
+		if (verbose) printf("%0.3f ", nn->out[i]);
+		if (nn->out[i] > max) {
+			max = nn->out[i];
+			max_i = i;
+		}
+	}
+	if (verbose) printf(" -> %d\n", max_i);
+	if (nn->out[0] > nn->out[1] && nn->out[0] - nn->out[1] < 0.1) return 2;
+	return max_i;
+}
+
 
 
 double CalculateMoment(FeatureList &obj, cv::Mat indexedImage, cv::Mat coloredImage, int p, int q)
@@ -496,9 +710,95 @@ void ImageIndexing()
 }
 
 
+void train(NN* nn)
+{
+	int n = 1000;
+	double ** trainingSet = new double *[n];
+	for (int i = 0; i < n; i++) {
+		trainingSet[i] = new double[nn->n[0] + nn->n[nn->l - 1]];
+
+		bool classA = i % 2;
+
+		for (int j = 0; j < nn->n[0]; j++) {
+			if (classA) {
+				trainingSet[i][j] = 0.1 * (double)rand() / (RAND_MAX)+0.6;
+			}
+			else {
+				trainingSet[i][j] = 0.1 * (double)rand() / (RAND_MAX)+0.2;
+			}
+		}
+
+		trainingSet[i][nn->n[0]] = (classA) ? 1.0 : 0.0;
+		trainingSet[i][nn->n[0] + 1] = (classA) ? 0.0 : 1.0;
+	}
+
+	double error = 1.0;
+	int i = 0;
+	while (error > 0.001)
+	{
+		setInput(nn, trainingSet[i%n], true);
+		feedforward(nn);
+		error = backpropagation(nn, &trainingSet[i%n][nn->n[0]]);
+		i++;
+		printf("\rerr=%0.3f", error);
+	}
+	printf(" (%d iterations)\n", i);
+
+	for (int i = 0; i < n; i++) {
+		delete[] trainingSet[i];
+	}
+	delete[] trainingSet;
+}
+
+void test(NN* nn, int num_samples = 10)
+{
+	double* in = new double[nn->n[0]];
+
+	int num_err = 0;
+	for (int n = 0; n < num_samples; n++)
+	{
+		bool classA = rand() % 2;
+
+		for (int j = 0; j < nn->n[0]; j++)
+		{
+			if (classA)
+			{
+				in[j] = 0.1 * (double)rand() / (RAND_MAX)+0.6;
+			}
+			else
+			{
+				in[j] = 0.1 * (double)rand() / (RAND_MAX)+0.2;
+			}
+		}
+		printf("predicted: %d\n", !classA);
+		setInput(nn, in, true);
+
+		feedforward(nn);
+		int output = getOutput(nn, true);
+		if (output == classA) num_err++;
+		printf("\n");
+	}
+	double err = (double)num_err / num_samples;
+	printf("test error: %.2f\n", err);
+}
+
 
 int main()
 {
-	//Excercise 1
-	ImageIndexing();
+	//Excercise 1- 6
+	// ImageIndexing();
+	NN * nn = createNN(2, 4, 2);
+	    train(nn);
+	    
+	    getchar();
+	    
+	    test(nn, 100);
+	
+		getchar();
+	
+		releaseNN( nn );
+
+		cv::waitKey(0);
+		return 0;
+
 }
