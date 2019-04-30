@@ -62,6 +62,26 @@ def normalise(data):
     return norm
 
 
+def neural_network(features, labels):
+    nclasses = labels.cols
+    nfeatures = features.cols
+    ann = cv2.ml.ANN_MLP.create()
+    Mat_ < int > layers(3, 1)
+    layers[0, 0] = nfeatures
+    layers[1, 0] = 6
+    layers[2, 0] = nclasses
+    ann.setLayerSizes(layers)
+    ann.setActivationFunction(cv2.SIGMOID_SYM)
+    ann.setTermCriteria(1000000)
+    ann.setTrainMethod(cv2.BACKPROP, 0.0001)
+
+    print("Training...\n")
+    ann.train(features, labels)
+
+    result = None
+    pred = ann.predict(features.row(0), result)
+
+
 def main():
 
     # train(trainloader, model)
@@ -127,8 +147,8 @@ def main():
             xCenter = int(ch * CELL_SIZE + CELL_SIZE/2)
             yCenter = int(cw * CELL_SIZE + CELL_SIZE/2)
             cv2.circle(img, (yCenter, xCenter), 1, (255, 0, 0))
-            print("\n\n")
-            print(vector)
+            #  print("\n\n")
+            # print(vector)
             print(norm)
 
     print("FINISH")
