@@ -58,8 +58,18 @@ def normalise(data):
     dataSum = sum(data)
     if dataSum == 0:
         return data
-    norm = [float(i)/sum(data) for i in data]
+    norm = [float(i)/sum(data) * 10 for i in data]
     return norm
+
+
+def drawArrows(image, x, y, vector):
+    for i in range(9):
+        angle = 40 * i
+        length = int(vector[i])
+        x2 = int(x + length * math.cos(angle * 3.14 / 180.0))
+        y2 = int(y + length * math.sin(angle * 3.14 / 180.0))
+        cv2.arrowedLine(image, (x, y), (x2, y2), (255, 0, 0), 1)
+    return image
 
 
 def neural_network(features, labels):
@@ -89,8 +99,8 @@ def main():
 
     img = cv2.imread('test.png', 0)
     height, width = img.shape
-    BLOCK_SIZE = 1
-    CELL_SIZE = 10
+    BLOCK_SIZE = 2
+    CELL_SIZE = 8
     BINS = 9
 
     # brightness = np.zeros((height,width))
@@ -120,6 +130,10 @@ def main():
     # cellsOrientation = np.zeros(height/CELL_SIZE, width/CELL_SIZE)
     # blocks = np.zeros(height/BLOCK_SIZE, width/BLOCK_SIZE)
     bNumber = 0
+    allVectors = []
+    rows, cols = (cellsInHeight, cellsInWidth)
+
+    arrayOfVectors = [[0]*cols]*rows
 
     for ch in range(cellsInHeight):
         for cw in range(cellsInWidth):
@@ -142,18 +156,43 @@ def main():
                         binN = 8
                         # print(str(binN) + " - " + str(orientation[imgX][imgY]))
                     vector[binN] += gradient[imgX][imgY]
+            allVectors.append(vector)
+            arrayOfVectors[ch][cw] = vector
             # cell is done
             norm = normalise(vector)
             xCenter = int(ch * CELL_SIZE + CELL_SIZE/2)
             yCenter = int(cw * CELL_SIZE + CELL_SIZE/2)
-            cv2.circle(img, (yCenter, xCenter), 1, (255, 0, 0))
             #  print("\n\n")
             # print(vector)
+            # print(norm)
+
+    # print("FINISH")
+    vectorCounter = 0
+
+    arrayOfBlocks = []
+    for r in range(0, (rows), BLOCK_SIZE):  # 0 - 7
+        for c in range(0, (cols), BLOCK_SIZE):  # 0 - 7
+
+            tmpVector = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+            for his in range(9):
+                tmpVector[his] += arrayOfVectors[r][c][his]
+                tmpVector[his] += arrayOfVectors[r][c+1][his]
+                tmpVector[his] += arrayOfVectors[r+1][c][his]
+                tmpVector[his] += arrayOfVectors[r+1][c+1][his]
+            print("Vector: ")
+            print(tmpVector)
+
+            norm = normalise(tmpVector)
+            rowPos = int((CELL_SIZE) * r + (CELL_SIZE * BLOCK_SIZE) / 2)
+            cellPos = int((CELL_SIZE) * c + (CELL_SIZE * BLOCK_SIZE) / 2)
+            img = drawArrows(img, rowPos, cellPos, norm)
+            print("Normalised vector x 10: ")
             print(norm)
-
-    print("FINISH")
-
+            print("\n")
+            vectorCounter += 1
     cv2.imshow('Data', img)
+    #cv2.namedWindow('Data', cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow('Data', 600, 600)
 
     cv2.imwrite("square_circle_opencv.jpg", img)
     cv2.waitKey()
