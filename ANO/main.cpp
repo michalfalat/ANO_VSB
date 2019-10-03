@@ -25,6 +25,8 @@ int load_parking_geometry(const char *filename, space *spaces);
 void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images);
 void draw_detection(space *spaces, Mat &frame);
 void evaluation(fstream &detectorOutputFile, fstream &groundTruthFile);
+vector<Vec4i> calculate_lines(Mat image);
+int show_lines(Mat src);
 
 void train_parking();
 void test_parking();
@@ -37,7 +39,7 @@ cv::Size space_size(80, 80);
 int main(int argc, char** argv)
 {
 	cout << "Train OpenCV Start" << endl;
-	train_parking();
+	//train_parking();
 	cout << "Train OpenCV End" << endl;
 
 	cout << "Test OpenCV Start" << endl;
@@ -101,11 +103,12 @@ void test_parking()
 	fstream test_file("test_images.txt");
 	ofstream out_label_file("out_prediction.txt");
 	string test_path;
+	int lineThreshold = 20;
 
 	while (test_file >> test_path)
 	{
 		//cout << "test_path: " << test_path << endl;
-		Mat frame, gradX, gradY;
+		Mat frame, gradX, gradY, lined;
 		//read testing images
 		frame = imread(test_path, 1);
 		Mat draw_frame = frame.clone();
@@ -117,19 +120,25 @@ void test_parking()
 		int colNum = 0;
 		for (int i = 0; i < test_images.size(); i++)
 		{
-
-			int predict_label = 0;
-			out_label_file << predict_label << endl;
-			spaces[i].occup = predict_label;
-			imshow("test_img", test_images[i]);
-			waitKey(0);
+			//vector<Vec4i> lines = calculate_lines(test_images[i]);
+			//cout << "Lines [" << i << "]: " << lines.size() << endl;
+			int linesCanny = show_lines(test_images[i]);
+			if (linesCanny > lineThreshold) {
+				spaces[i].occup = 1;
+			}
+			else {
+				spaces[i].occup = 0;
+				out_label_file << 0 << endl;
+			}
+			// imshow("test_img", test_images[i]);
+			//waitKey(0);
 		}
 
 		//draw detection
-		draw_detection(spaces, draw_frame);
+		/*draw_detection(spaces, draw_frame);
 		namedWindow("draw_frame", 0);
 		imshow("draw_frame", draw_frame);
-		waitKey(0);
+		waitKey(0);*/
 
 	}
 
@@ -137,6 +146,28 @@ void test_parking()
 	fstream detector_file("out_prediction.txt");
 	fstream groundtruth_file("groundtruth.txt");
 	evaluation(detector_file, groundtruth_file);
+}
+
+vector<Vec4i> calculate_lines(Mat image) {
+	vector<Vec4i> lines;
+	HoughLinesP(image, lines, 1, CV_PI / 180, 1000, 50, 10);
+	return lines;
+}
+
+int show_lines(Mat src) {
+	Mat dst, cdst;
+	vector<vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+	Canny(src, dst, 150, 100, 3);
+	vector<Vec4i> lines;
+	HoughLines(dst, lines, 1, CV_PI / 180, 500, 5, 10);
+	// findContours(dst, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+	cvtColor(dst, cdst, CV_GRAY2BGR);
+
+	 imshow("with lines", dst);
+	 cout << "Lines [" << contours.size() << "]: " << hierarchy.size() <<  " hugh: " << lines.size() << endl;
+	 waitKey(0);
+	return contours.size();
 }
 
 int load_parking_geometry(const char *filename, space *spaces)
