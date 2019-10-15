@@ -158,15 +158,15 @@ int show_lines(Mat src) {
 	Mat dst, cdst;
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
-	Canny(src, dst, 150, 100, 3);
+	Canny(src, dst, 250, 200, 3);
 	vector<Vec4i> lines;
-	HoughLines(dst, lines, 1, CV_PI / 180, 500, 5, 10);
-	// findContours(dst, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+	HoughLinesP(dst, lines, 1, CV_PI / 180, 500, 5, 10);
+	findContours(dst, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
 	cvtColor(dst, cdst, CV_GRAY2BGR);
 
 	 imshow("with lines", dst);
 	 cout << "Lines [" << contours.size() << "]: " << hierarchy.size() <<  " hugh: " << lines.size() << endl;
-	 waitKey(0);
+	 //waitKey(0);
 	return contours.size();
 }
 
