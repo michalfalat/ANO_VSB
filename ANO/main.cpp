@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 //#include <pch>
+#include <cstdlib>
 
 //opencv - https://opencv.org/
 #include <opencv2/opencv.hpp>
@@ -21,12 +22,15 @@ struct space
 	int x01, y01, x02, y02, x03, y03, x04, y04, occup;
 };
 
+
 int load_parking_geometry(const char *filename, space *spaces);
 void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images);
 void draw_detection(space *spaces, Mat &frame);
 void evaluation(fstream &detectorOutputFile, fstream &groundTruthFile);
 vector<Vec4i> calculate_lines(Mat image);
 int show_lines(Mat src);
+bool do_sobel(Mat src);
+int count_white_pixels(Mat src);
 
 void train_parking();
 void test_parking();
@@ -103,7 +107,7 @@ void test_parking()
 	fstream test_file("test_images.txt");
 	ofstream out_label_file("out_prediction.txt");
 	string test_path;
-	int lineThreshold = 20;
+
 
 	while (test_file >> test_path)
 	{
@@ -120,25 +124,24 @@ void test_parking()
 		int colNum = 0;
 		for (int i = 0; i < test_images.size(); i++)
 		{
-			//vector<Vec4i> lines = calculate_lines(test_images[i]);
-			//cout << "Lines [" << i << "]: " << lines.size() << endl;
-			int linesCanny = show_lines(test_images[i]);
-			if (linesCanny > lineThreshold) {
+			bool detected = do_sobel(test_images[i]);
+			if (detected) {
 				spaces[i].occup = 1;
+				out_label_file << 1 << endl;
 			}
 			else {
 				spaces[i].occup = 0;
 				out_label_file << 0 << endl;
 			}
-			// imshow("test_img", test_images[i]);
-			//waitKey(0);
+			/*imshow("test_img", test_images[i]);
+			waitKey(0);*/
 		}
 
 		//draw detection
-		/*draw_detection(spaces, draw_frame);
+		draw_detection(spaces, draw_frame);
 		namedWindow("draw_frame", 0);
 		imshow("draw_frame", draw_frame);
-		waitKey(0);*/
+		waitKey(0);
 
 	}
 
@@ -154,6 +157,7 @@ vector<Vec4i> calculate_lines(Mat image) {
 	return lines;
 }
 
+// OBSOLETE - low accurancy
 int show_lines(Mat src) {
 	Mat dst, cdst;
 	vector<vector<Point> > contours;
@@ -164,10 +168,61 @@ int show_lines(Mat src) {
 	findContours(dst, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
 	cvtColor(dst, cdst, CV_GRAY2BGR);
 
-	 imshow("with lines", dst);
-	 cout << "Lines [" << contours.size() << "]: " << hierarchy.size() <<  " hugh: " << lines.size() << endl;
-	 //waitKey(0);
+	imshow("with lines", dst);
+	cout << "Lines [" << contours.size() << "]: " << hierarchy.size() << " hugh: " << lines.size() << endl;
+	waitKey(0);
 	return contours.size();
+}
+
+bool do_sobel(Mat src) {
+
+	// int white_threshold = 185; // 0.97247
+	// int white_threshold = 182; // 0.9732
+	// int white_threshold = 181; // 0.97396
+	// int white_threshold = 180; // 0.973958
+	int white_threshold = 175; // 0.9747
+ // int white_threshold = 172; // 0.97173
+ // int white_threshold = 170; // 0.9717
+ // int white_threshold = 160; // 0.96875
+	int scale = 1;
+	int delta = 0;
+	int ddepth = CV_16S;
+
+	Mat grad;
+	Mat dst; /// Generate grad_x and grad_y
+	Mat grad_x, grad_y;
+	Mat abs_grad_x, abs_grad_y;
+	Mat grad2, grad_thresholded;
+
+	// Gradient X
+	//Scharr( src_gray, grad_x, ddepth, 1, 0, scale, delta, BORDER_DEFAULT );
+	Sobel(src, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
+	convertScaleAbs(grad_x, abs_grad_x);
+
+	// Gradient Y
+	//Scharr( src_gray, grad_y, ddepth, 0, 1, scale, delta, BORDER_DEFAULT );
+	Sobel(src, grad_y, ddepth, 0, 1, 3, scale, delta, BORDER_DEFAULT);
+	convertScaleAbs(grad_y, abs_grad_y);
+
+	// Total Gradient (approximate)
+	addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad);
+
+	threshold(grad, grad_thresholded, 127, 255, THRESH_BINARY);
+	int whitePixels = count_white_pixels(grad_thresholded);
+	// cout << "Value: " << whitePixels << endl;
+	// imshow("Original", src);
+	// imshow("Sobel", grad);
+	// imshow("With threshold", grad_thresholded);
+	// waitKey(0);
+	if (whitePixels > white_threshold)
+	{
+		return true;
+	}
+	return false;
+}
+
+int count_white_pixels(Mat src) {
+	return countNonZero(src);
 }
 
 int load_parking_geometry(const char *filename, space *spaces)
