@@ -3,13 +3,15 @@
 //opencv - https://opencv.org/
 #include <opencv2/opencv.hpp>
 using namespace std;
-using namespace cv;
 using namespace cv::ml;
 
 //dlib - http://dlib.net/
 #include <dlib/matrix.h>
 #include <dlib/dnn.h>
 #include <dlib/opencv.h>
+#include <chrono>
+
+
 using namespace dlib;
 
 
@@ -18,17 +20,18 @@ struct space
 	int x01, y01, x02, y02, x03, y03, x04, y04, occup;
 };
 
-int load_parking_geometry(const char *filename, space *spaces);
-void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images);
-void draw_detection(space *spaces, Mat &frame);
-void evaluation(fstream &detectorOutputFile, fstream &groundTruthFile);
+int load_parking_geometry(const char* filename, space* spaces);
+void extract_space(space* spaces, cv::Mat in_mat, std::vector<cv::Mat>& vector_images);
+void draw_detection(space* spaces, cv::Mat& frame);
+void evaluation(fstream& detectorOutputFile, fstream& groundTruthFile);
 
 void train_parking();
+cv::Mat do_sobel(cv::Mat src);
 void train_parking_dlib();
 void test_parking();
 void test_parking_dlib();
 
-void convert_to_ml(const std::vector< cv::Mat > & train_samples, cv::Mat& trainData);
+void convert_to_ml(const std::vector< cv::Mat >& train_samples, cv::Mat& trainData);
 
 int spaces_num = 56;
 cv::Size space_size(80, 80);
@@ -43,16 +46,42 @@ using net_type = loss_multiclass_log<
 	input<matrix<unsigned char>>
 	>>>>>>>>>>>>>>>;
 
+
 int main(int argc, char** argv)
 {
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	cout << "Train OpenCV Start" << endl;
 	train_parking_dlib();
 	cout << "Train OpenCV End" << endl;
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	std::cout << "Time ellapsed:  " << std::chrono::duration_cast<std::chrono::milliseconds> (end - begin).count() << " ms" << std::endl << std::endl;
 
+	begin = std::chrono::steady_clock::now();
 	cout << "Test OpenCV Start" << endl;
 	test_parking_dlib();
 	cout << "Test OpenCV End" << endl;
+	end = std::chrono::steady_clock::now();
+	std::cout << "Time ellapsed:  " << std::chrono::duration_cast<std::chrono::milliseconds> (end - begin).count() << " ms" << std::endl << std::endl;
 
+}
+cv::Mat do_sobel(cv::Mat src) {
+
+	int scale = 1;
+	int delta = 0;
+	int ddepth = CV_16S;
+
+	cv::Mat grad;
+	cv::Mat dst; /// Generate grad_x and grad_y
+	cv::Mat grad_x, grad_y;
+	cv::Mat abs_grad_x, abs_grad_y;
+	cv::Mat grad2, grad_thresholded;
+	Sobel(src, grad_x, ddepth, 1, 0, 3, scale, delta, cv::BORDER_DEFAULT);
+	convertScaleAbs(grad_x, abs_grad_x);
+	Sobel(src, grad_y, ddepth, 0, 1, 3, scale, delta, cv::BORDER_DEFAULT);
+	convertScaleAbs(grad_y, abs_grad_y);
+	addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad);
+	// threshold(grad, grad_thresholded, 127, 255, cv::THRESH_BINARY);
+	return grad;
 }
 
 
@@ -64,13 +93,17 @@ void train_parking_dlib()
 	//training file
 	fstream train_file("train_images_dlib.txt");
 	string train_path;
+	int full = 0;
+	int free = 0;
+
 
 	while (train_file >> train_path)
 	{
-		Mat frame;
+		cv::Mat frame;
 		//read training image
-		frame = imread(train_path, 0);
-		resize(frame, frame, Size(40, 40));
+		frame = cv::imread(train_path, 0);
+		cv::resize(frame, frame, cv::Size(40, 40));
+		frame = do_sobel(frame);
 		cv_image<unsigned char> cimg(frame);
 		matrix<unsigned char> dlibFrame = dlib::mat(cimg);
 
@@ -79,16 +112,26 @@ void train_parking_dlib()
 		// label = 0;//free place         
 		unsigned long label = 0;
 		//based on the image name set label
-		if (train_path.find("full") != std::string::npos) label = 1;
+		if (train_path.find("full") != std::string::npos) {
+			label = 1;
+			full++;
+		}
+		else {
+			free++;
+		}
 		//training label for each parking space
 		train_labels.push_back(label);
 
 	}
 
+	cout << "FREE places: " << free << endl;
+	cout << "FULL places: " << full << endl;
 	//TODO TRAINING FUNCTIONS
 	cout << "Train images: " << train_images.size() << endl;
 	cout << "Train labels: " << train_labels.size() << endl;
 
+
+	cout << "Training started .." << endl;
 	// network instance
 	net_type net;
 
@@ -106,54 +149,58 @@ void train_parking_dlib()
 	// saving
 	serialize("LeNetTest.dat") << net;
 
+
 }
 
 void test_parking_dlib()
 {
 
-	space *spaces = new space[spaces_num];
+	space* spaces = new space[spaces_num];
 	load_parking_geometry("parking_map.txt", spaces);
 
 	fstream test_file("test_images.txt");
 	ofstream out_label_file("out_prediction.txt");
 	string test_path;
 
-	net_type net;
+	 net_type net;
 	deserialize("LeNetTest.dat") >> net;
 
 	while (test_file >> test_path)
 	{
 		//read testing images
-		Mat frame = imread(test_path, 1);
-		Mat draw_frame = frame.clone();
-		cvtColor(frame, frame, COLOR_BGR2GRAY);
+		cv::Mat frame = cv::imread(test_path, 1);
+		cv::Mat draw_frame = frame.clone();
+		cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
 
-		std::vector<Mat> test_images;
+		std::vector<cv::Mat> test_images;
 		extract_space(spaces, frame, test_images);
 
 		int colNum = 0;
 		for (int i = 0; i < test_images.size(); i++)
 		{
-			Mat pFrame = test_images[i];
-			resize(pFrame, pFrame, Size(40, 40));
-			//TODO PREDICTION FUNCTION            
+			cv::Mat pFrame = test_images[i];
+			cv::resize(pFrame, pFrame, cv::Size(40, 40));
+			//TODO PREDICTION FUNCTION
+			pFrame = do_sobel(pFrame);
 			cv_image<unsigned char> cimg(pFrame);
 			matrix<unsigned char> dlibFrame = dlib::mat(cimg);
 			unsigned long predict_label = net(dlibFrame);
 
 			out_label_file << predict_label << endl;
 			spaces[i].occup = predict_label;
-			imshow("test_img", test_images[i]);
-			waitKey(2);
+			//imshow("test_img", test_images[i]);
+			//cv::waitKey(2);
 		}
 
 		//draw detection
-		draw_detection(spaces, draw_frame);
-		namedWindow("draw_frame", 0);
+		/*draw_detection(spaces, draw_frame);
+		cv::namedWindow("draw_frame", 0);
 		imshow("draw_frame", draw_frame);
-		waitKey(0);
+		cv::waitKey(0);*/
 
 	}
+
+
 
 	//evaluation    
 	fstream detector_file("out_prediction.txt");
@@ -161,9 +208,9 @@ void test_parking_dlib()
 	evaluation(detector_file, groundtruth_file);
 }
 
-int load_parking_geometry(const char *filename, space *spaces)
+int load_parking_geometry(const char* filename, space* spaces)
 {
-	FILE *file = fopen(filename, "r");
+	FILE* file = fopen(filename, "r");
 	if (file == NULL) return -1;
 	int ps_count, i, count;
 	count = fscanf(file, "%d\n", &ps_count); // read count of polygons
@@ -171,7 +218,7 @@ int load_parking_geometry(const char *filename, space *spaces)
 		int p = 0;
 		int poly_size;
 		count = fscanf(file, "%d->", &poly_size); // read count of polygon vertexes
-		int *row = new int[poly_size * 2];
+		int* row = new int[poly_size * 2];
 		int j;
 		for (j = 0; j < poly_size; j++) {
 			int x, y;
@@ -196,12 +243,12 @@ int load_parking_geometry(const char *filename, space *spaces)
 	return 1;
 }
 
-void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images)
+void extract_space(space* spaces, cv::Mat in_mat, std::vector<cv::Mat>& vector_images)
 {
 	for (int x = 0; x < spaces_num; x++)
 	{
-		Mat src_mat(4, 2, CV_32F);
-		Mat out_mat(space_size, CV_8U, 1);
+		cv::Mat src_mat(4, 2, CV_32F);
+		cv::Mat out_mat(space_size, CV_8U, 1);
 		src_mat.at<float>(0, 0) = spaces[x].x01;
 		src_mat.at<float>(0, 1) = spaces[x].y01;
 		src_mat.at<float>(1, 0) = spaces[x].x02;
@@ -211,7 +258,7 @@ void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images)
 		src_mat.at<float>(3, 0) = spaces[x].x04;
 		src_mat.at<float>(3, 1) = spaces[x].y04;
 
-		Mat dest_mat(4, 2, CV_32F);
+		cv::Mat dest_mat(4, 2, CV_32F);
 		dest_mat.at<float>(0, 0) = 0;
 		dest_mat.at<float>(0, 1) = 0;
 		dest_mat.at<float>(1, 0) = out_mat.cols;
@@ -221,7 +268,7 @@ void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images)
 		dest_mat.at<float>(3, 0) = 0;
 		dest_mat.at<float>(3, 1) = out_mat.rows;
 
-		Mat H = findHomography(src_mat, dest_mat, 0);
+		cv::Mat H = findHomography(src_mat, dest_mat, 0);
 		warpPerspective(in_mat, out_mat, H, space_size);
 
 		//imshow("out_mat", out_mat);
@@ -233,12 +280,12 @@ void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images)
 
 }
 
-void draw_detection(space *spaces, Mat &frame)
+void draw_detection(space* spaces, cv::Mat& frame)
 {
 	int sx, sy;
 	for (int i = 0; i < spaces_num; i++)
 	{
-		Point pt1, pt2;
+		cv::Point pt1, pt2;
 		pt1.x = spaces[i].x01;
 		pt1.y = spaces[i].y01;
 		pt2.x = spaces[i].x03;
@@ -247,16 +294,16 @@ void draw_detection(space *spaces, Mat &frame)
 		sy = (pt1.y + pt2.y) / 2;
 		if (spaces[i].occup)
 		{
-			circle(frame, Point(sx, sy - 25), 12, CV_RGB(255, 0, 0), -1);
+			circle(frame, cv::Point(sx, sy - 25), 12, CV_RGB(255, 0, 0), -1);
 		}
 		else
 		{
-			circle(frame, Point(sx, sy - 25), 12, CV_RGB(0, 255, 0), -1);
+			circle(frame, cv::Point(sx, sy - 25), 12, CV_RGB(0, 255, 0), -1);
 		}
 	}
 }
 
-void evaluation(fstream &detectorOutputFile, fstream &groundTruthFile)
+void evaluation(fstream& detectorOutputFile, fstream& groundTruthFile)
 {
 	int detectorLine, groundTruthLine;
 	int falsePositives = 0;
@@ -304,15 +351,15 @@ void evaluation(fstream &detectorOutputFile, fstream &groundTruthFile)
 	cout << "Accuracy " << acc << endl;
 }
 
-void convert_to_ml(const std::vector< cv::Mat > & train_samples, cv::Mat& trainData)
+void convert_to_ml(const std::vector< cv::Mat >& train_samples, cv::Mat& trainData)
 {
 	//--Convert data
 	const int rows = (int)train_samples.size();
 	const int cols = (int)std::max(train_samples[0].cols, train_samples[0].rows);
 	cv::Mat tmp(1, cols, CV_32FC1); //< used for transposition if needed
 	trainData = cv::Mat(rows, cols, CV_32FC1);
-	std::vector< Mat >::const_iterator itr = train_samples.begin();
-	std::vector< Mat >::const_iterator end = train_samples.end();
+	std::vector< cv::Mat >::const_iterator itr = train_samples.begin();
+	std::vector< cv::Mat >::const_iterator end = train_samples.end();
 	for (int i = 0; itr != end; ++itr, ++i)
 	{
 		CV_Assert(itr->cols == 1 ||
