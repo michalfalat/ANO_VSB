@@ -1,8 +1,4 @@
-#include "stdafx.h"
-#include <opencv2/opencv.hpp>
 #include <iostream>
-//#include <pch>
-#include <cstdlib>
 
 //opencv - https://opencv.org/
 #include <opencv2/opencv.hpp>
@@ -11,94 +7,108 @@ using namespace cv;
 using namespace cv::ml;
 
 //dlib - http://dlib.net/
-/*#include <dlib/matrix.h>
+#include <dlib/matrix.h>
 #include <dlib/dnn.h>
 #include <dlib/opencv.h>
 using namespace dlib;
-*/
+
 
 struct space
 {
 	int x01, y01, x02, y02, x03, y03, x04, y04, occup;
 };
 
-
 int load_parking_geometry(const char *filename, space *spaces);
 void extract_space(space *spaces, Mat in_mat, std::vector<Mat> &vector_images);
 void draw_detection(space *spaces, Mat &frame);
 void evaluation(fstream &detectorOutputFile, fstream &groundTruthFile);
-vector<Vec4i> calculate_lines(Mat image);
-int show_lines(Mat src);
-bool do_sobel(Mat src);
-int count_white_pixels(Mat src);
 
 void train_parking();
+void train_parking_dlib();
 void test_parking();
+void test_parking_dlib();
 
 void convert_to_ml(const std::vector< cv::Mat > & train_samples, cv::Mat& trainData);
 
 int spaces_num = 56;
 cv::Size space_size(80, 80);
 
+using net_type = loss_multiclass_log<
+	fc<2,
+	relu<fc<84,
+	relu<fc<120,
+	max_pool<2, 2, 2, 2, relu<con<32, 3, 3, 1, 1,
+	max_pool<2, 2, 2, 2, relu<con<16, 5, 5, 1, 1,
+	max_pool<2, 2, 2, 2, relu<con<6, 5, 5, 1, 1,
+	input<matrix<unsigned char>>
+	>>>>>>>>>>>>>>>;
+
 int main(int argc, char** argv)
 {
 	cout << "Train OpenCV Start" << endl;
-	//train_parking();
+	train_parking_dlib();
 	cout << "Train OpenCV End" << endl;
 
 	cout << "Test OpenCV Start" << endl;
-	test_parking();
+	test_parking_dlib();
 	cout << "Test OpenCV End" << endl;
 
 }
 
-void train_parking()
+
+void train_parking_dlib()
 {
-	//load parking lot geometry
-	space *spaces = new space[spaces_num];
-	load_parking_geometry("parking_map.txt", spaces);
-
-	std::vector<Mat> train_images;
-	std::vector<int> train_labels;
-
-	fstream train_file("train_images.txt");
+	//vectors for training images and labels   
+	std::vector<unsigned long> train_labels;
+	std::vector<matrix<unsigned char>> train_images;
+	//training file
+	fstream train_file("train_images_dlib.txt");
 	string train_path;
 
 	while (train_file >> train_path)
 	{
-
-		//cout << "train_path: " << train_path << endl;
 		Mat frame;
-
-		//read training images
+		//read training image
 		frame = imread(train_path, 0);
+		resize(frame, frame, Size(40, 40));
+		cv_image<unsigned char> cimg(frame);
+		matrix<unsigned char> dlibFrame = dlib::mat(cimg);
 
+		train_images.push_back(dlibFrame);
 		// label = 1;//occupied place
 		// label = 0;//free place         
-		int label = 0;
+		unsigned long label = 0;
+		//based on the image name set label
 		if (train_path.find("full") != std::string::npos) label = 1;
-
-		//extract each parking space
-		extract_space(spaces, frame, train_images);
-
 		//training label for each parking space
-		for (int i = 0; i < spaces_num; i++)
-		{
-			train_labels.push_back(label);
-		}
+		train_labels.push_back(label);
 
 	}
 
-	delete spaces;
-
+	//TODO TRAINING FUNCTIONS
 	cout << "Train images: " << train_images.size() << endl;
 	cout << "Train labels: " << train_labels.size() << endl;
 
-	//TODO - Train
+	// network instance
+	net_type net;
+
+	// mini-batch stochastic gradient descent   
+	//dnn_trainer<net_type> trainer(net, sgd(), {0,1}); //{0,1} - will use two GPU
+	dnn_trainer<net_type> trainer(net);
+	trainer.set_learning_rate(0.01);
+	trainer.set_min_learning_rate(0.0001);
+	trainer.set_mini_batch_size(10);
+	trainer.set_iterations_without_progress_threshold(500);
+	trainer.set_max_num_epochs(100);
+	trainer.be_verbose();
+
+	trainer.train(train_images, train_labels);
+	// saving
+	serialize("LeNetTest.dat") << net;
 
 }
 
-void test_parking()
+void test_parking_dlib()
 {
 
 	space *spaces = new space[spaces_num];
@@ -108,13 +118,13 @@ void test_parking()
 	ofstream out_label_file("out_prediction.txt");
 	string test_path;
 
+	net_type net;
+	deserialize("LeNetTest.dat") >> net;
 
 	while (test_file >> test_path)
 	{
-		//cout << "test_path: " << test_path << endl;
-		Mat frame, gradX, gradY, lined;
 		//read testing images
-		frame = imread(test_path, 1);
+		Mat frame = imread(test_path, 1);
 		Mat draw_frame = frame.clone();
 		cvtColor(frame, frame, COLOR_BGR2GRAY);
 
@@ -124,17 +134,17 @@ void test_parking()
 		int colNum = 0;
 		for (int i = 0; i < test_images.size(); i++)
 		{
-			bool detected = do_sobel(test_images[i]);
-			if (detected) {
-				spaces[i].occup = 1;
-				out_label_file << 1 << endl;
-			}
-			else {
-				spaces[i].occup = 0;
-				out_label_file << 0 << endl;
-			}
-			/*imshow("test_img", test_images[i]);
-			waitKey(0);*/
+			Mat pFrame = test_images[i];
+			resize(pFrame, pFrame, Size(40, 40));
+			//TODO PREDICTION FUNCTION            
+			cv_image<unsigned char> cimg(pFrame);
+			matrix<unsigned char> dlibFrame = dlib::mat(cimg);
+			unsigned long predict_label = net(dlibFrame);
+
+			out_label_file << predict_label << endl;
+			spaces[i].occup = predict_label;
+			imshow("test_img", test_images[i]);
+			waitKey(2);
 		}
 
 		//draw detection
@@ -149,80 +159,6 @@ void test_parking()
 	fstream detector_file("out_prediction.txt");
 	fstream groundtruth_file("groundtruth.txt");
 	evaluation(detector_file, groundtruth_file);
-}
-
-vector<Vec4i> calculate_lines(Mat image) {
-	vector<Vec4i> lines;
-	HoughLinesP(image, lines, 1, CV_PI / 180, 1000, 50, 10);
-	return lines;
-}
-
-// OBSOLETE - low accurancy
-int show_lines(Mat src) {
-	Mat dst, cdst;
-	vector<vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-	Canny(src, dst, 250, 200, 3);
-	vector<Vec4i> lines;
-	HoughLinesP(dst, lines, 1, CV_PI / 180, 500, 5, 10);
-	findContours(dst, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
-	cvtColor(dst, cdst, CV_GRAY2BGR);
-
-	imshow("with lines", dst);
-	cout << "Lines [" << contours.size() << "]: " << hierarchy.size() << " hugh: " << lines.size() << endl;
-	waitKey(0);
-	return contours.size();
-}
-
-bool do_sobel(Mat src) {
-
-	// int white_threshold = 185; // 0.97247
-	// int white_threshold = 182; // 0.9732
-	// int white_threshold = 181; // 0.97396
-	// int white_threshold = 180; // 0.973958
-	int white_threshold = 175; // 0.9747
- // int white_threshold = 172; // 0.97173
- // int white_threshold = 170; // 0.9717
- // int white_threshold = 160; // 0.96875
-	int scale = 1;
-	int delta = 0;
-	int ddepth = CV_16S;
-
-	Mat grad;
-	Mat dst; /// Generate grad_x and grad_y
-	Mat grad_x, grad_y;
-	Mat abs_grad_x, abs_grad_y;
-	Mat grad2, grad_thresholded;
-
-	// Gradient X
-	//Scharr( src_gray, grad_x, ddepth, 1, 0, scale, delta, BORDER_DEFAULT );
-	Sobel(src, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
-	convertScaleAbs(grad_x, abs_grad_x);
-
-	// Gradient Y
-	//Scharr( src_gray, grad_y, ddepth, 0, 1, scale, delta, BORDER_DEFAULT );
-	Sobel(src, grad_y, ddepth, 0, 1, 3, scale, delta, BORDER_DEFAULT);
-	convertScaleAbs(grad_y, abs_grad_y);
-
-	// Total Gradient (approximate)
-	addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad);
-
-	threshold(grad, grad_thresholded, 127, 255, THRESH_BINARY);
-	int whitePixels = count_white_pixels(grad_thresholded);
-	// cout << "Value: " << whitePixels << endl;
-	// imshow("Original", src);
-	// imshow("Sobel", grad);
-	// imshow("With threshold", grad_thresholded);
-	// waitKey(0);
-	if (whitePixels > white_threshold)
-	{
-		return true;
-	}
-	return false;
-}
-
-int count_white_pixels(Mat src) {
-	return countNonZero(src);
 }
 
 int load_parking_geometry(const char *filename, space *spaces)
