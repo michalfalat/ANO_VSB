@@ -4,6 +4,8 @@
 //#include <pch>
 #include <cstdlib>
 
+#include <chrono>
+
 //opencv - https://opencv.org/
 #include <opencv2/opencv.hpp>
 using namespace std;
@@ -42,13 +44,18 @@ cv::Size space_size(80, 80);
 
 int main(int argc, char** argv)
 {
-	cout << "Train OpenCV Start" << endl;
-	//train_parking();
-	cout << "Train OpenCV End" << endl;
+	//cout << "Train OpenCV Start" << endl;
+	////train_parking();
+	//cout << "Train OpenCV End" << endl;
 
+
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	cout << "Test OpenCV Start" << endl;
 	test_parking();
 	cout << "Test OpenCV End" << endl;
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	std::cout << "Time ellapsed:  " << std::chrono::duration_cast<std::chrono::milliseconds> (end - begin).count() << " ms" << std::endl << std::endl;
+
 
 }
 
@@ -138,10 +145,10 @@ void test_parking()
 		}
 
 		//draw detection
-		draw_detection(spaces, draw_frame);
+		/*draw_detection(spaces, draw_frame);
 		namedWindow("draw_frame", 0);
 		imshow("draw_frame", draw_frame);
-		waitKey(0);
+		waitKey(0);*/
 
 	}
 
@@ -209,11 +216,11 @@ bool do_sobel(Mat src) {
 
 	threshold(grad, grad_thresholded, 127, 255, THRESH_BINARY);
 	int whitePixels = count_white_pixels(grad_thresholded);
-	// cout << "Value: " << whitePixels << endl;
-	// imshow("Original", src);
-	// imshow("Sobel", grad);
-	// imshow("With threshold", grad_thresholded);
-	// waitKey(0);
+	/* cout << "Value: " << whitePixels << endl;
+	 imshow("Original", src);
+	 imshow("Sobel", grad);
+	 imshow("With threshold", grad_thresholded);
+	 waitKey(0);*/
 	if (whitePixels > white_threshold)
 	{
 		return true;
